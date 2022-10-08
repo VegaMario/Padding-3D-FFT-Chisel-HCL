@@ -3,7 +3,7 @@
   <component name="ScalaCompilerConfiguration">
     <profile name="sbt 1" modules="Padding-3D-FFT-Chisel-HCL">
       <plugins>
-        <plugin path="$USER_HOME$/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/edu/berkeley/cs/chisel3-plugin_2.13.7/3.5.0/chisel3-plugin_2.13.7-3.5.0.jar" />
+        <plugin path="C:\Users\mario\AppData\Local\Coursier\Cache\v1\https\repo1.maven.org\maven2\edu\berkeley\cs\chisel3-plugin_2.13.7\3.5.0\chisel3-plugin_2.13.7-3.5.0.jar" />
       </plugins>
     </profile>
   </component>

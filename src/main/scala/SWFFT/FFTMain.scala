@@ -1,6 +1,5 @@
 package SWFFT
 import Permutations._
-import ChiselFFT.Testing._
 import ChiselFFT.FFTSRDesigns._
 import better.files.StringInterpolations
 import chisel3.getVerilogString
@@ -170,14 +169,5 @@ object FFTMain {
 //        }
 //      }
 //    }
-    test(new FP_sqrt2(32)){c=>
-      c.io.in_a.poke(convert_string_to_IEEE_754("144.0", 32).U)
-      for(i <-0 until 30){
-        println(s"Clock Cycle: ${i}")
-        c.clock.step(1)
-//        c.io.in_a.poke(convert_string_to_IEEE_754((i+1).toDouble.toString, 32).U)
-        println(s"output: ${convert_long_to_float(c.io.out_s.peek().litValue, 32)}")
-      }
-    }
   }
 }
