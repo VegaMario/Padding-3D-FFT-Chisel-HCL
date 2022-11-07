@@ -46,7 +46,7 @@ object FPComplex { // these are the complex FP modules
       val out_s = Output(new ComplexNum(bw))
     })
     if (sRe.abs < 0.00005) { // check if the sRe value is approximately 0 (may need to find a better way of doing this)
-      if (add_reg) {
+      if (add_reg) { // we have the option of adding a register to maintain the pipeline
         val result = RegInit(0.U.asTypeOf(new ComplexNum(bw)))
         when(io.in_en){
           result := io.in_b
@@ -57,7 +57,7 @@ object FPComplex { // these are the complex FP modules
       } else {
         io.out_s := io.in_b // combinational logic
       }
-    } else if (sIm.abs < 0.00005) {
+    } else if (sIm.abs < 0.00005) { // check if the IMaginary value is appx 0
       if (add_reg) {
         val result = RegInit(0.U.asTypeOf(new ComplexNum(bw)))
         when(io.in_en){
@@ -69,7 +69,7 @@ object FPComplex { // these are the complex FP modules
       } else {
         io.out_s := io.in_a
       }
-    } else {
+    } else { // neither the real or imaginary parts can be ignored
       val FP_adders = (for (i <- 0 until 2) yield {
         val fpadd = Module(new FP_adder_v2(bw)).io
         fpadd
@@ -113,7 +113,7 @@ object FPComplex { // these are the complex FP modules
       val in_b = Input(new ComplexNum(bw))
       val out_s = Output(new ComplexNum(bw))
     })
-    if (sRe.abs < 0.00005) {
+    if (sRe.abs < 0.00005) { // check if the real part is appx 0
       if (add_reg) {
         val result = RegInit(0.U.asTypeOf(new ComplexNum(bw)))
         when(io.in_en) {
@@ -125,7 +125,7 @@ object FPComplex { // these are the complex FP modules
         io.out_s.Re := (~io.in_b.Re(bw - 1)) ## io.in_b.Re(bw - 2, 0)
         io.out_s.Im := (~io.in_b.Im(bw - 1)) ## io.in_b.Im(bw - 2, 0)
       }
-    } else if (sIm.abs < 0.00005) {
+    } else if (sIm.abs < 0.00005) { // check if imaginary part is appx 0
       if (add_reg) {
         val result = RegInit(0.U.asTypeOf(new ComplexNum(bw)))
         when(io.in_en) {
@@ -135,7 +135,7 @@ object FPComplex { // these are the complex FP modules
       } else {
         io.out_s := io.in_a
       }
-    } else {
+    } else { // neither the real or imaginary parts are zero // we must use actual FP units
       val FP_subbers = (for (i <- 0 until 2) yield {
         val fpsub = Module(new FP_subber_v2(bw)).io
         fpsub
@@ -186,6 +186,9 @@ object FPComplex { // these are the complex FP modules
   }
 
   // multiplier with reducable hardware cost based on parameters
+  // specifically checks to see if real or imaginary parts are powers of 2
+  // it this is the case, then we can reduce the amount of multipliers used.
+  // for this module, we are assuming that complex number magnitudes = 1
   class FPComplexMult_reducable_SimpleCases_v2(bw: Int, sRe: Double, sIm: Double) extends Module {
     var exponent = 0
     var mantissa = 0
@@ -226,48 +229,49 @@ object FPComplex { // these are the complex FP modules
     val c1 = isReducable(sRe.abs)
     val c2 = isReducable(sIm.abs)
     val new_sign = Wire(Vec(4, UInt(1.W)))
+    // computing the new signs resulting from multiplications
     new_sign(0) := sign(0) ^ io.in_b.Re(bw - 1)
     new_sign(1) := sign(0) ^ io.in_b.Im(bw - 1)
     new_sign(2) := sign(1) ^ io.in_b.Im(bw - 1)
     new_sign(3) := sign(1) ^ io.in_b.Re(bw - 1)
-    when(c1._1.B) {
+    when(c1._1.B) { // is the real part of the second input a power of 2 value
       when(exp(0) =/= 0.U) {
-        new_exp1(0) := exp(0) - c1._2.abs.U
+        new_exp1(0) := exp(0) - c1._2.abs.U // adjust the exponent part of the real part of the first input
       }.otherwise {
         new_exp1(0) := exp(0)
       }
       when(exp(1) =/= 0.U) {
-        new_exp1(1) := exp(1) - c1._2.abs.U
+        new_exp1(1) := exp(1) - c1._2.abs.U // adjust the exponent part of the imaginary part of the first input
       }.otherwise {
         new_exp1(1) := exp(1)
       }
-    }.elsewhen(c2._1.B) {
+    }.elsewhen(c2._1.B) { // is the imaginary part of the second input a power of 2 value
       when(exp(0) =/= 0.U) {
-        new_exp1(0) := exp(0) - c2._2.abs.U
+        new_exp1(0) := exp(0) - c2._2.abs.U // adjust exp part of real part of first input
       }.otherwise {
         new_exp1(0) := exp(0)
       }
       when(exp(1) =/= 0.U) {
-        new_exp1(1) := exp(1) - c2._2.abs.U
+        new_exp1(1) := exp(1) - c2._2.abs.U // adjust exp part of imaginary part of first input
       }.otherwise {
         new_exp1(1) := exp(1)
       }
     }.otherwise {
-      new_exp1(0) := exp(0)
+      new_exp1(0) := exp(0) // otherwise just keep the same exp for both real and im parts of first input
       new_exp1(1) := exp(1)
     }
 
     val mult_results = Wire(Vec(4, UInt(bw.W)))
-    if (c1._1) {
+    if (c1._1) { // real part of second input is a power of 2
       val regs1 = RegInit(VecInit.fill(2)(0.U(bw.W)))
       //val regs1 = Reg(Vec(2, UInt(bw.W)))
       when(io.in_en) {
-        regs1(0) := new_sign(0) ## new_exp1(0) ## frac(0)
-        regs1(1) := new_sign(3) ## new_exp1(1) ## frac(1)
+        regs1(0) := new_sign(0) ## new_exp1(0) ## frac(0) // concat the sign/exp/mantissa parts into the IEEE 754 FP number
+        regs1(1) := new_sign(3) ## new_exp1(1) ## frac(1) //
       }
-      mult_results(0) := regs1(0)
+      mult_results(0) := regs1(0) // we now have half of the multiplier results that we need
       mult_results(3) := regs1(1)
-    } else {
+    } else { // otherwise we need to use actualy FP multipliers
       val FP_multipliers1 = (for (i <- 0 until 2) yield {
         val fpmult = Module(new FP_multiplier_v2(bw)).io
         fpmult
@@ -282,16 +286,16 @@ object FPComplex { // these are the complex FP modules
       mult_results(0) := FP_multipliers1(0).out_s
       mult_results(3) := FP_multipliers1(1).out_s
     }
-    if (c2._1) {
+    if (c2._1) { // imaginary part of second input is a power of 2.
       val regs2 = RegInit(VecInit.fill(2)(0.U(bw.W)))
       //val regs2 = Reg(Vec(2, UInt(bw.W)))
       when(io.in_en) {
-        regs2(0) := new_sign(1) ## new_exp1(0) ## frac(0)
+        regs2(0) := new_sign(1) ## new_exp1(0) ## frac(0) // concat the sign/ exp/ mantissa parts
         regs2(1) := new_sign(2) ## new_exp1(1) ## frac(1)
       }
-      mult_results(2) := regs2(0)
+      mult_results(2) := regs2(0) // we know have the other half of the multiplier results that we need
       mult_results(1) := regs2(1)
-    } else {
+    } else { // otherwise we need to use actual FP multipliers
       val FP_multipliers2 = (for (i <- 0 until 2) yield {
         val fpmult = Module(new FP_multiplier_v2(bw)).io
         fpmult
@@ -306,7 +310,7 @@ object FPComplex { // these are the complex FP modules
       mult_results(2) := FP_multipliers2(0).out_s
       mult_results(1) := FP_multipliers2(1).out_s
     }
-    FP_sub.in_a := mult_results(0)
+    FP_sub.in_a := mult_results(0) // complete FP multiplier computation using adder and subtraction
     FP_sub.in_b := mult_results(1)
     FP_add.in_a := mult_results(2)
     FP_add.in_b := mult_results(3)
@@ -314,6 +318,10 @@ object FPComplex { // these are the complex FP modules
     io.out_s.Im := FP_add.out_s
   }
 
+  // a more general implementation of FPComplexMult_reduceable_simplecases_v2
+  // also consideres cases in which complex number magnitude != 1
+  // but it can also do same function as the previous module if needed.
+  // mainly used in the symmetric DFT implementation
   class FPComplexMult_reducable_forSymmetric_v2(bw: Int, sRe: Double, sIm: Double, add_reg: Boolean, special_mult: Boolean) extends Module {
     var exponent = 0
     var mantissa = 0
@@ -342,8 +350,8 @@ object FPComplex { // these are the complex FP modules
       val in_b = Input(new ComplexNum(bw))
       val out_s = Output(new ComplexNum(bw))
     })
-    if (sRe.abs < 0.00005 && sIm.abs < 0.00005) {
-      if (add_reg) {
+    if (sRe.abs < 0.00005 && sIm.abs < 0.00005) { // if both real and imaginary parts of second input are 0
+      if (add_reg) { // add some registers to maintain the pipeline if not done externally already
         val result = RegInit(VecInit.fill(regdpth)(0.U.asTypeOf(new ComplexNum(bw))))
         when(io.in_en) {
           for (i <- 0 until regdpth) {
@@ -360,28 +368,28 @@ object FPComplex { // these are the complex FP modules
         io.out_s := 0.U.asTypeOf(new ComplexNum(bw))
       }
     }
-    else if ((sRe.abs - sIm.abs).abs < 0.000005) {
+    else if ((sRe.abs - sIm.abs).abs < 0.000005) { // if the real part and imaginary parts have the same value. (sqrt(2)/2 for instance)
       val adder = Module(new FP_adder_v2(bw)).io
       val subber = Module(new FP_subber_v2(bw)).io
       adder.in_en := io.in_en
       subber.in_en := io.in_en
       val temp_results = Wire(Vec(2, new ComplexNum(bw)))
-      if (sRe > 0 && sIm > 0) {
+      if (sRe > 0 && sIm > 0) { // both im and re parts are positive
         temp_results(0).Re := io.in_a.Re
         temp_results(0).Im := io.in_a.Im
         temp_results(1).Re := io.in_a.Re
         temp_results(1).Im := io.in_a.Im
-      } else if (sRe < 0 && sIm < 0) {
+      } else if (sRe < 0 && sIm < 0) { // both im and re pats are negative
         temp_results(0).Re := (~io.in_a.Re(bw - 1)) ## io.in_a.Re(bw - 2, 0)
         temp_results(0).Im := (~io.in_a.Im(bw - 1)) ## io.in_a.Im(bw - 2, 0)
         temp_results(1).Re := (~io.in_a.Re(bw - 1)) ## io.in_a.Re(bw - 2, 0)
         temp_results(1).Im := (~io.in_a.Im(bw - 1)) ## io.in_a.Im(bw - 2, 0)
-      } else if (sRe < 0) {
+      } else if (sRe < 0) { // real part is negative, im part is positive
         temp_results(0).Re := (~io.in_a.Re(bw - 1)) ## io.in_a.Re(bw - 2, 0)
         temp_results(0).Im := io.in_a.Im
         temp_results(1).Re := io.in_a.Re
         temp_results(1).Im := (~io.in_a.Im(bw - 1)) ## io.in_a.Im(bw - 2, 0)
-      } else if (sIm < 0) {
+      } else if (sIm < 0) { // im part is negative, re part is positive
         temp_results(0).Re := io.in_a.Re
         temp_results(0).Im := (~io.in_a.Im(bw - 1)) ## io.in_a.Im(bw - 2, 0)
         temp_results(1).Re := (~io.in_a.Re(bw - 1)) ## io.in_a.Re(bw - 2, 0)
@@ -391,6 +399,7 @@ object FPComplex { // these are the complex FP modules
       subber.in_b := temp_results(0).Im
       adder.in_a := temp_results(1).Re
       adder.in_b := temp_results(1).Im
+      // notice that wer are only using 2 multipliers insteadt of using 4 like we normally do for complex mults
       val multipliers = VecInit.fill(2)(Module(new FP_multiplier_v2(bw)).io)
       for(i <- 0 until 2){
         multipliers(i).in_en := io.in_en
@@ -403,20 +412,20 @@ object FPComplex { // these are the complex FP modules
       io.out_s.Re := multipliers(0).out_s
       io.out_s.Im := multipliers(1).out_s
     }
-    else if (sRe.abs < 0.00005) {
+    else if (sRe.abs < 0.00005) { // if real part of second input is 0
       val conds = isReducable(sIm.abs)
       val cmplx_reorder = Module(new ComplexNum_AdjustOrder_v2(bw)).io
       cmplx_reorder.in_en := io.in_en
       cmplx_reorder.in := io.in_a
-      cmplx_reorder.is_flip := true.B
-      if (conds._1) {
+      cmplx_reorder.is_flip := true.B // we know that we have to multiply times imaginary part
+      if (conds._1) { // if imaginary part is a power of 2
         cmplx_reorder.in_adj := conds._2.abs.U
-        if (sIm < -0.00005) {
+        if (sIm < -0.00005) { // if imaginary part is negative
           cmplx_reorder.is_neg := true.B
         } else {
           cmplx_reorder.is_neg := false.B
         }
-        if (add_reg) {
+        if (add_reg) { // add reg to maintain pipeline if not already done so externally
           val result = RegInit(VecInit.fill(regdpth)(0.U.asTypeOf(new ComplexNum(bw))))
           when(io.in_en) {
             for (i <- 0 until regdpth) {
@@ -432,10 +441,10 @@ object FPComplex { // these are the complex FP modules
         } else {
           io.out_s := cmplx_reorder.out
         }
-      } else {
+      } else { // if imaginary part is not a power of 2
         cmplx_reorder.in_adj := 0.U
         cmplx_reorder.is_neg := false.B
-        val multipliers = for (i <- 0 until 2) yield {
+        val multipliers = for (i <- 0 until 2) yield { // use actual multipliers
           val mults = Module(new FP_multiplier_v2(bw)).io
           mults
         }
@@ -449,20 +458,20 @@ object FPComplex { // these are the complex FP modules
         io.out_s.Re := multipliers(0).out_s
         io.out_s.Im := multipliers(1).out_s
       }
-    } else if (sIm.abs < 0.00005) {
-      val conds = isReducable(sRe.abs)
+    } else if (sIm.abs < 0.00005) { // if the imaginary part of second input is 0
+      val conds = isReducable(sRe.abs) // check if real part of second inout is a power of 2
       val cmplx_reorder = Module(new ComplexNum_AdjustOrder_v2(bw)).io
       cmplx_reorder.in_en := io.in_en
       cmplx_reorder.in := io.in_a
-      cmplx_reorder.is_flip := false.B
-      if (conds._1) {
+      cmplx_reorder.is_flip := false.B // no need to flip when we only have to multiply by a real part
+      if (conds._1) { // if real part is power of 2
         cmplx_reorder.in_adj := conds._2.abs.U
-        if (sRe < -0.00005) {
+        if (sRe < -0.00005) { // if real part is negative
           cmplx_reorder.is_neg := true.B
         } else {
           cmplx_reorder.is_neg := false.B
         }
-        if (add_reg) {
+        if (add_reg) { // add regs for pipeline
           val result = RegInit(VecInit.fill(regdpth)(0.U.asTypeOf(new ComplexNum(bw))))
           when(io.in_en) {
             for (i <- 0 until regdpth) {
@@ -495,7 +504,7 @@ object FPComplex { // these are the complex FP modules
         io.out_s.Re := multipliers(0).out_s
         io.out_s.Im := multipliers(1).out_s
       }
-    } else {
+    } else { // if we have non zero imaginary and real parts
       val FP_sub = Module(new FP_subber_v2(bw)).io
       val FP_add = Module(new FP_adder_v2(bw)).io
       FP_sub.in_en := io.in_en
@@ -510,8 +519,8 @@ object FPComplex { // these are the complex FP modules
       frac(0) := io.in_a.Re(mantissa - 1, 0)
       frac(1) := io.in_a.Im(mantissa - 1, 0)
       val new_exp1 = Wire(Vec(2, UInt(exponent.W)))
-      val c1 = isReducable(sRe.abs)
-      val c2 = isReducable(sIm.abs)
+      val c1 = isReducable(sRe.abs) // check if real part is power of 2
+      val c2 = isReducable(sIm.abs) // check if imaginary part is power of2
       val new_sign = Wire(Vec(4, UInt(1.W)))
       new_sign(0) := sign(0) ^ io.in_b.Re(bw - 1)
       new_sign(1) := sign(0) ^ io.in_b.Im(bw - 1)
@@ -602,6 +611,8 @@ object FPComplex { // these are the complex FP modules
     }
   }
 
+  // add up n complex inputs using multiple FP adders with 2 input ports each
+  // kind of like a dot product after the multiplication part.
   class FPComplexMultiAdder_v2(n: Int, bw: Int) extends Module {
     val io = IO(new Bundle() {
       val in = Input(Vec(n, new ComplexNum(bw)))
@@ -746,6 +757,10 @@ object FPComplex { // these are the complex FP modules
     }
   }
 
+  // used in the case that a full FP multiplier is not entirely needed to achieve the result.
+  // perhaps it is the case that a complex number is being multiplied by power of 2 or 1, or a negative value
+  // this module takes all of that into account and computes the outcome that one would get with the
+  // fp multiplier using a much lower resource cost module.
   class ComplexNum_AdjustOrder_v2(bw: Int) extends Module {
     var exponent = 0
     var mantissa = 0
@@ -766,9 +781,9 @@ object FPComplex { // these are the complex FP modules
     val io = IO(new Bundle() {
       val in = Input(new ComplexNum(bw))
       val in_en = Input(Bool())
-      val in_adj = Input(UInt(exponent.W))
-      val is_neg = Input(Bool())
-      val is_flip = Input(Bool())
+      val in_adj = Input(UInt(exponent.W)) // adjust the exponent part of the complex input
+      val is_neg = Input(Bool()) // identify if we have to multiply the input times a negative 1
+      val is_flip = Input(Bool()) // identify whether we are multiplying the input by a purely real num or imaginary number
       val out = Output(new ComplexNum(bw))
     })
     val sign = Wire(Vec(2, UInt(1.W)))
@@ -781,7 +796,7 @@ object FPComplex { // these are the complex FP modules
     frac(0) := io.in.Re(mantissa - 1, 0)
     frac(1) := io.in.Im(mantissa - 1, 0)
     val new_sign = Wire(Vec(2, UInt(1.W)))
-    when(io.is_neg) {
+    when(io.is_neg) { // if multiplying by negative, invert the sign of the input
       new_sign(0) := ~sign(0)
       new_sign(1) := ~sign(1)
     }.otherwise {
@@ -790,18 +805,18 @@ object FPComplex { // these are the complex FP modules
     }
     val new_exp = Wire(Vec(2, UInt(exponent.W)))
     when(exp(0) =/= 0.U) {
-      new_exp(0) := exp(0) - io.in_adj
+      new_exp(0) := exp(0) - io.in_adj // adjust the exponent of the input
     }.otherwise {
       new_exp(0) := exp(0)
     }
     when(exp(1) =/= 0.U) {
-      new_exp(1) := exp(1) - io.in_adj
+      new_exp(1) := exp(1) - io.in_adj // adjust the exponent of the input
     }.otherwise {
       new_exp(1) := exp(1)
     }
 
     val out_reg_save = RegInit(0.U.asTypeOf(new ComplexNum(bw)))
-    when(io.is_flip) {
+    when(io.is_flip) { // we flip the real part to the imaginary part and imaginary to real part
       when(io.in_en) {
         io.out.Re := (~new_sign(1)) ## new_exp(1) ## frac(1)
         io.out.Im := (new_sign(0)) ## new_exp(0) ## frac(0)
@@ -811,7 +826,7 @@ object FPComplex { // these are the complex FP modules
         io.out.Re := out_reg_save.Re
         io.out.Im := out_reg_save.Im
       }
-    }.otherwise {
+    }.otherwise { // otherwise leave the order the same.
       when(io.in_en) {
         io.out.Re := (new_sign(0)) ## new_exp(0) ## frac(0)
         io.out.Im := (new_sign(1)) ## new_exp(1) ## frac(1)
