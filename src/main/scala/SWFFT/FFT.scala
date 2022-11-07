@@ -29,6 +29,14 @@ object FFT {
     DFT_arr
   }
 
+  def inv_DFT_gen(n: Int) : Array[Array[cmplx]] = {
+    (for(i <- 0 until n) yield{
+      (for(j <- 0 until n) yield{
+        Wnk_inv(n,i*j)
+      }).toArray
+    }).toArray
+  }
+
   // Perform the computation of the DFT_NRV (matrix * vector) (not the FFT)
   def DFT_compute(DFT: Array[Array[cmplx]], xi: Array[cmplx], N: Int): Array[cmplx] = {
     // initializing output array
@@ -51,6 +59,37 @@ object FFT {
     val l = (Math.log10(N)/Math.log10(r)).round.toInt //calculate the number of stages
     val w = N/r // Calculate the number of DFT computations per stage
     val DFT_r = DFT_gen(r) // generate a DFT_NRV matrix of size r, the radix
+    // initialize temporary array
+    val temp_t = for (i <- 0 until r) yield {
+      cmplx(0, 0)
+    }
+    var temp = temp_t.toArray
+    var Xk = R[cmplx](xr,N, r) // Permute the inputs
+    for(i <- 0 until l){ // for each stage
+      if(i!=0){ // if not at the first stage
+        for(k <- 0 until N){
+          Xk(k) = complex_mult( Xk(k), twiddle_factors(i-1)(k)) // apply the twiddle factors
+        }
+      }
+      for(j <- 0 until w){ // for all DFT computations required for the given stage
+        for(l <- 0 until r){ // fill in the temporary matrix with r elements from Xk
+          temp(l) = Xk(j*r + l)
+        }
+        temp  = DFT_compute(DFT_r, temp, r) // compute the DFT
+        for(l <- 0 until r){ // update the corresponding Xk values with outputs from DFT
+          Xk(j*r + l) = temp(l)
+        }
+      }
+      Xk = L[cmplx](Xk,N,r) // Permute Xk
+    }
+    Xk // return the results of the FFT_r computation
+  }
+
+  def FFT_r_inv(N: Int, r: Int, xr: Array[cmplx]): Array[cmplx] = {
+    val twiddle_factors = T2_inv(N, r) // generate the twiddle factors
+    val l = (Math.log10(N)/Math.log10(r)).round.toInt //calculate the number of stages
+    val w = N/r // Calculate the number of DFT computations per stage
+    val DFT_r = inv_DFT_gen(r) // generate a DFT_NRV matrix of size r, the radix
     // initialize temporary array
     val temp_t = for (i <- 0 until r) yield {
       cmplx(0, 0)
@@ -114,6 +153,21 @@ object FFT {
     }
     println(s"-----------------Output--------------------------")
 
+    results
+  }
+
+  def MDFFT_mr_PA(d: Int, N: Int, xi: Array[cmplx], nr: Int, ns: Int, r: Int, s: Int):Array[cmplx] = {
+    val size = Math.pow(N,d).round.toInt
+    var results = xi.clone()
+    for(i <- 0 until d){
+      for(j <- 0 until (size/N)){
+        val temp = FFT_mr(N,nr,ns,r,s,results.slice(j*N, j*N+N))
+        for(k <- 0 until N){
+          results(j*N+k) = temp(k)
+        }
+      }
+      results = L[cmplx](results,size,N)
+    }
     results
   }
 
@@ -216,8 +270,8 @@ object FFT {
     xk // return the xk array, now holding the solution
   }
 
-  def getfftstreamedlatency(N: Int, r: Int, w: Int, bw: Int): Int = {
-    val DFTr_Constants = FFT.DFT_gen(r).map(_.toVector).toVector
+  def getfftstreamedlatency(N: Int, r: Int, w: Int, bw: Int, inv: Boolean): Int = {
+    val DFTr_Constants = if(inv){FFT.inv_DFT_gen(r).map(_.toVector).toVector}else{FFT.DFT_gen(r).map(_.toVector).toVector}
     var mult_count = 0
     for (i <- 0 until r - 1) {
       for (j <- 0 until r - 1) {
@@ -339,8 +393,8 @@ object FFT {
     Total_Latency
   }
 
-  def getFFTLatency(N:Int, r: Int, w: Int, bw: Int): Int ={
-    val DFTr_Constants = FFT.DFT_gen(r).map(_.toVector).toVector
+  def getFFTLatency(N:Int, r: Int, w: Int, bw: Int, inv: Boolean): Int ={
+    val DFTr_Constants = if(inv){FFT.inv_DFT_gen(r).map(_.toVector).toVector}else{FFT.DFT_gen(r).map(_.toVector).toVector}
     var mult_count = 0
     for(i <- 0 until r-1){
       for(j <- 0 until r-1){
@@ -438,7 +492,7 @@ object FFT {
     var mult_cnt_twid = 0
     var subtract_mults = 0
     for(i <- 0 until TotalStages) {
-      val twid = Permutations.T2(N, r)(i)
+      val twid = if(inv){Permutations.T2_inv(N, r)(i)}else{Permutations.T2(N, r)(i)}
       var mult_count2 = 0
       for (i <- 0 until w){
         val n = twid(i)
@@ -468,10 +522,10 @@ object FFT {
     Total_Latency
   }
 
-  def getFFTLatencymr(N:Int, nr: Int, ns:Int, r: Int, s: Int, w: Int, bw: Int): Int = {
-    val FFT_latency1 = getFFTLatency(ns, s, ns, bw)
-    val FFT_latency2 = getFFTLatency(nr, r, nr, bw)
-    val DFTr_Constants = Permutations.T2_rs(N, ns, nr)
+  def getFFTLatencymr(N:Int, nr: Int, ns:Int, r: Int, s: Int, w: Int, bw: Int, inv: Boolean): Int = {
+    val FFT_latency1 = getFFTLatency(ns, s, ns, bw, inv)
+    val FFT_latency2 = getFFTLatency(nr, r, nr, bw, inv)
+    val DFTr_Constants = if(inv){Permutations.T2_rs_inv(N, ns, nr)}else{Permutations.T2_rs(N, ns, nr)}
     var mult_count = 0
     val mult_ind = mutable.ArrayBuffer[Int]()
     val mult_needs = for (i <- 0 until w) yield {
@@ -500,7 +554,7 @@ object FFT {
     total_latency
   }
 
-  def getfftstreamingmrlatency(N:Int, nr: Int, ns: Int, r: Int, s: Int, w: Int, bw: Int): Int = { // streaming single radix fft, still in progress
+  def getfftstreamingmrlatency(N:Int, nr: Int, ns: Int, r: Int, s: Int, w: Int, bw: Int, inv: Boolean): Int = { // streaming single radix fft, still in progress
     val w1 = w // this will be the input and output width
     var w2 = Permutations.getw2(w1, N, nr, ns, s)
     var delay_cycles_stage2 = N / w1 - N / w2 // w2 will be bigger than w1
@@ -512,17 +566,17 @@ object FFT {
     var fftlatency2 = 0
     val perm_latency1 = (N / w1) * 2
     if(w1 < nr && w2 < ns){
-      fftlatency1 = getfftstreamedlatency(nr,r,w1,bw)
-      fftlatency2 = getfftstreamedlatency(ns,s,w2,bw)
+      fftlatency1 = getfftstreamedlatency(nr,r,w1,bw, inv)
+      fftlatency2 = getfftstreamedlatency(ns,s,w2,bw, inv)
     }else if(w1 < nr && w2 >= ns){
-      fftlatency1 = getfftstreamedlatency(nr,r,w1,bw)
-      fftlatency2 = getFFTLatency(ns,s,ns,bw)
+      fftlatency1 = getfftstreamedlatency(nr,r,w1,bw, inv)
+      fftlatency2 = getFFTLatency(ns,s,ns,bw, inv)
     }else if(w1 >= nr && w2 < ns){
-      fftlatency1 = getFFTLatency(nr,r,nr,bw)
-      fftlatency2 = getfftstreamedlatency(ns,s,w2, bw)
+      fftlatency1 = getFFTLatency(nr,r,nr,bw, inv)
+      fftlatency2 = getfftstreamedlatency(ns,s,w2, bw, inv)
     }else if(w1 >= nr && w2 >= ns){
-      fftlatency1 = getFFTLatency(nr,r,nr,bw)
-      fftlatency2 = getFFTLatency(ns,s,ns,bw)
+      fftlatency1 = getFFTLatency(nr,r,nr,bw, inv)
+      fftlatency2 = getFFTLatency(ns,s,ns,bw, inv)
     }
     val total_latency = perm_latency1*3 + T_L + fftlatency1 + fftlatency2 + 1 // add 1 for output register
     total_latency

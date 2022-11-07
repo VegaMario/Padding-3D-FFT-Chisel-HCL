@@ -8,6 +8,8 @@ import scala.util.control.Breaks.break
 object Permutations {
   // Perform the L permutation (Stride permutation)
   def L[T:ClassTag]( l: Array[T], n: Int, m: Int): Array[T] = {
+    // m is the stride amount
+    // n is either equal to or less than l.length but is always a divisor of l.length
     var new_l = l.toArray //create array to store the new result
     var copy_l = l.toArray //create array to hold copy of input array
     var t = l.length / n // determine the number of stages
@@ -81,6 +83,28 @@ object Permutations {
     t_mtrx // return the twiddle matrices
   }
 
+  def T2_inv(N: Int, r:Int): Array[Array[cmplx]] = {
+    val t = ((Math.log10(N) / Math.log10(r)) - 1).round.toInt // calculate the total number of sets of twiddle matrices needed
+    val T_mtrx_t = for(i <- 0 until t) yield { // initialize array to hold all sets of twiddle matrices
+      val T_mini = for(j <- 0 until N) yield{
+        cmplx(0,0)
+      }
+      T_mini
+    }
+    var t_mtrx = T_mtrx_t.map(_.toArray).toArray
+    for(tt <- 0 until t) { // cycle through all sets
+      for(k <- 0 until (N/Math.pow(r, t-tt).toInt)) { // do for each k index
+        for(l <- 0 until N/(N/Math.pow(r, t-tt).toInt * r)){ // repeat for l times to fill up the twid matrix
+          for (i <- 0 until r) { // each group has r elements
+            // fill in the twiddle matrices with the Wnk values
+            t_mtrx(tt)( (N/(N/Math.pow(r, t-tt).toInt * r))*r*k + r*l + i) = Wnk_inv(N, (i * Math.pow(r, t-tt-1).toInt)*k)
+          }
+        }
+      }
+    }
+    t_mtrx // return the twiddle matrices
+  }
+
   // this used for computing twiddle factors involved in a mixed radix computation of the FFT
   def T2_rs(N: Int, r:Int, s:Int): Array[cmplx] = {
     val T_mtrx_t = for(j <- 0 until N) yield{ // initialize matrix that will hold the results
@@ -93,6 +117,19 @@ object Permutations {
       }
     }
     t_mtrx // return the twiddle factor array
+  }
+
+  def T2_rs_inv(N: Int, r:Int, s:Int): Array[cmplx] = {
+    val T_mtrx_t = for(j <- 0 until N) yield{ // initialize matrix that will hold the results
+      cmplx(0,0)
+    }
+    var t_mtrx = T_mtrx_t.toArray
+    for(k <- 0 until r) { // for each k value
+      for (i <- 0 until s) { // there are a total of s terms in equation
+        t_mtrx(k*s + i) = Wnk_inv(N, i *k) // fill in the twiddle array with the Wnk values
+      }
+    }
+    t_mtrx.map(x=>cmplx(x.re/N, x.im/N)) // return the twiddle factor array
   }
 
   // splits the N inputs into N/w groups of w words
@@ -337,6 +374,7 @@ object Permutations {
     cpy
   }
 
+  // sorts from least to greatest
   def Mapping_Sort(xi: Array[Array[((Int,Int),(Int,Int))]], t: Int) : Array[Array[((Int,Int),(Int,Int))]] = {
     var temp = 0
     var temp2 = 0
@@ -379,16 +417,22 @@ object Permutations {
     lists.toArray
   }
 
+  // if we don't select the w2 streaming width manually
+  // then we generate one using this function
   def getw2(w1: Int, N: Int, nr: Int, ns: Int, s: Int): Int = {
-    var w2 = 0
+    var w2 = 0 // variable to hold the w2 value.
     if(w1 == 2){
+      // if it is the case that the w1 = 2, then we are defaulting to w2 = 3
       w2 = 3
     }else{
-      if(w1 < nr) {
-        if(ns != s) {
+      if(w1 < nr) { // if w1 streaming width is less than the FFT single radix size of the first stage,
+        // then we know that we will use the reduced width streaming FFT sr design.
+        if(ns != s) { // the ns value is not equal to the radix s
+          // generate possibilities based on ns size
           val generated_mappings = Permutations.generate_streaming_possibilities(ns, s)
           var counter = 0
           var flag = false
+          // finds the first possible w2 that is larger than w1.
           while (generated_mappings(counter) < w1 && !flag) {
             if(counter == generated_mappings.length-1){
               flag = true
@@ -396,12 +440,14 @@ object Permutations {
               counter += 1
             }
           }
+          // if no w2 was successfully found, the w2 is set to ns
           if(flag){
             w2 = ns
           }else{
-            w2 = generated_mappings(counter)
+            w2 = generated_mappings(counter) // otherwise it gets the value found
           }
         }else{
+          // generate possibilities based on the full N size
           val generated_mappings = Permutations.generate_streaming_possibilities(N, s)
           var counter = 0
           while (generated_mappings(counter) < w1) {
@@ -438,6 +484,8 @@ object Permutations {
   }
 
   // more general way for generating streaming mapping
+  // my algorithm that generates the streaming mapping
+  // that is used by the permutation modules
   def GenerateStreamingMappingV2(N: Int, w: Int, r: Int, base_r: Int, t:Int) = { // This is even more general than the first function
     val base_indices = (for(i <- 0 until N)yield{i}).toArray // generate all the indices corresponding to the N elements
     val non_permuted = StreamingGroup[Int](base_indices, N, w) // group indices into streaming groups
@@ -461,7 +509,7 @@ object Permutations {
     val vertical_length = N/w
     for(l <- 0 until vertical_length-1) { // we are checking every row to make sure that there are no repeated M1 ports
       val used_indices = mutable.ArrayBuffer[Int]() // keeps track of the
-      used_indices += unorganized_memory_addr(l)(0)._2._2 // we preload the first element of each row into the buffer
+      used_indices += unorganized_memory_addr(l)(0)._2._2 // we preload the first element of each row into the buffer (column)
       val all_columns = mutable.ArrayBuffer[Array[Array[((Int, Int), (Int, Int))]]]() // we use this to hold all sorted columns
       val single_column = mutable.ArrayBuffer[Array[((Int, Int), (Int, Int))]]() // we use this to hold one column
       val get_first_column = (for (i <- l until vertical_length) yield {
@@ -478,7 +526,7 @@ object Permutations {
         var cnt = 0 + l // counter used for cycling through elements
         var flag = false // lets us know if no new numbers are found
         while (used_indices.contains(unorganized_memory_addr(cnt)(i)._2._2) && !flag) { // trying to search for new numbers not previously used
-          temp = circular_shift[((Int, Int), (Int, Int))](temp, 1) // it a applies a circular style shift to the rows
+          temp = circular_shift[((Int, Int), (Int, Int))](temp, 1) // it a applies a circular style shift to the column selected
           if(cnt == vertical_length-1){ // however, if we have reached the end of the column length and we still have not found a new number
             var temp2 = temp.clone()
             flag = true // the flag means no new numbers have been found
@@ -537,14 +585,14 @@ object Permutations {
         all_columns += single_column.toArray
         single_column.clear()
       }
-      val organ = (for (i <- l until vertical_length) yield {
+      val organized = (for (i <- l until vertical_length) yield {
         (for (j <- 0 until horizontal_length) yield {
           all_columns(j)(0)(i-l)
         }).toArray
       }).toArray
       for (i <- l until vertical_length) {
         for (j <- 0 until horizontal_length) {
-          unorganized_memory_addr(i)(j) = organ(i-l)(j)
+          unorganized_memory_addr(i)(j) = organized(i-l)(j)
         }
       }
     }

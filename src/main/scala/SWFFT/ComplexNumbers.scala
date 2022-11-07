@@ -42,5 +42,17 @@ object ComplexNumbers {
     cmplx(Math.cos(rads), Math.sin(rads))
   }
 
+  type Wnk_inv = cmplx
+  def Wnk_inv(N:Double, nk: Double): cmplx = {
+    var rads = ((2*Math.PI)/N) * nk
+    cmplx(Math.cos(rads), Math.sin(rads))
+  }
+
+  type Wnk_inv_2 = cmplx
+  def Wnk_inv_2(N:Double, nk: Double): cmplx = {
+    var rads = ((2*Math.PI)/N) * nk
+    cmplx(Math.cos(rads)/N, Math.sin(rads)/N)
+  }
+
 
 }
