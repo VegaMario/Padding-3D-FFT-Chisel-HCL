@@ -16,6 +16,7 @@ import DFTDesigns._
 import scala.collection.mutable
 
 object PermutationDesigns {
+  // permutation design for non reduced width streaming - full width streaming
   class PermutationsSimple(N:Int, r: Int, Type: Int, bw: Int) extends Module{
     val io = IO(new Bundle() {
       val in = Input(Vec(N, new ComplexNum(bw)))
@@ -27,6 +28,7 @@ object PermutationDesigns {
     }
   }
 
+  // Permutation top module for single radix - streaming width adjustable
   class PermutationsWithStreaming_v2(N: Int, r: Int, base_r: Int, w: Int, ptype: Int, bw: Int) extends Module {
     val io = IO(new Bundle() {
       val in_en_main = Input(Bool())
@@ -151,6 +153,7 @@ object PermutationDesigns {
     Perm_Config.in_cnt := cnt
   }
 
+  // Permutation top module for mixed radix - streaming width adjustable
   class PermutationsWithStreaming_mr_v2(N: Int, r: Int, base_r: Int, w: Int, win: Int, ptype: Int, bw: Int, delay: Int) extends Module {
     val ccs = if (win > w) {
       N / w
@@ -172,7 +175,7 @@ object PermutationDesigns {
         M0_t
       }).toVector
       val M1 = (for (i <- 0 until w) yield { // same as M1 //lets make it a vec
-        val M1_t = Module(new RAM_Block(N, w, bw)).io // this should be valid since all the parameters are the same
+        val M1_t = Module(new RAM_Block(N, w, bw)).io
         M1_t
       }).toVector
       for(i <- 0 until  w){
@@ -185,7 +188,7 @@ object PermutationDesigns {
         }
       }
       val modded_list2 = modded_list.flatten
-      val modded_list3 = for (i <- 0 until N / win) yield { // too large of an array was causing problems, in reality it should be (N/win)
+      val modded_list3 = for (i <- 0 until N / win) yield {
         for (j <- 0 until win) yield {
           modded_list2(i * win + j)
         }
@@ -522,6 +525,7 @@ object PermutationDesigns {
     }
   }
 
+  // permutation unit for reduced streaming widths
   class Permute_Unit_Streaming(w: Int, bw: Int) extends Module {
     val io = IO(new Bundle() {
       val in = Input(Vec(w, new ComplexNum(bw)))
@@ -544,6 +548,7 @@ object PermutationDesigns {
     }
   }
 
+  // configuration for M0 ROM (how to read out the data elements from M0)
   class M0_Config_ROM(N: Int, r: Int, base_r: Int, ptype: Int, w: Int) extends Module{
     val io = IO(new Bundle() {
       val in_cnt = Input(UInt((log2Ceil(N/w).W)))
@@ -568,6 +573,7 @@ object PermutationDesigns {
     }
   }
 
+  // configuration for M1 ROM (how to store into M1)
   class M1_Config_ROM(N: Int, r: Int, base_r: Int, ptype: Int, w: Int) extends Module{
     val io = IO(new Bundle() {
       val in_cnt = Input(UInt((log2Ceil(N/w).W)))
@@ -591,6 +597,7 @@ object PermutationDesigns {
     }
   }
 
+  // configuration for the permute module
   class Streaming_Permute_Config(N: Int, r: Int, base_r: Int, ptype: Int, w: Int)extends Module{
     val io = IO(new Bundle() {
       val in_cnt = Input(UInt((log2Ceil(N/w).W)))
@@ -614,6 +621,7 @@ object PermutationDesigns {
     }
   }
 
+  // single port RAMs
   class RAM_Block(N: Int, w: Int, bw: Int) extends Module{
     val io = IO(new Bundle() {
       val in_raddr = Input(UInt((log2Ceil(2 * (N/w))).W))
@@ -642,6 +650,7 @@ object PermutationDesigns {
     }
   }
 
+  // Multi-Port RAM
   class RAM_Block_MultiWrite(N: Int, w: Int, size:Int, bw: Int) extends Module{ //application specific
     val io = IO(new Bundle() {
       val in_raddr = Input(UInt((log2Ceil(2 * (N/w))).W))
