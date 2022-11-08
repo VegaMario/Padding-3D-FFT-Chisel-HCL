@@ -45,7 +45,7 @@ object FPComplex { // these are the complex FP modules
       val in_b = Input(new ComplexNum(bw))
       val out_s = Output(new ComplexNum(bw))
     })
-    if (sRe.abs < 0.00005) { // check if the sRe value is approximately 0 (may need to find a better way of doing this)
+    if (sRe.abs < 0.00005) { // if inout a is zero
       if (add_reg) { // we have the option of adding a register to maintain the pipeline
         val result = RegInit(0.U.asTypeOf(new ComplexNum(bw)))
         when(io.in_en){
@@ -57,7 +57,7 @@ object FPComplex { // these are the complex FP modules
       } else {
         io.out_s := io.in_b // combinational logic
       }
-    } else if (sIm.abs < 0.00005) { // check if the IMaginary value is appx 0
+    } else if (sIm.abs < 0.00005) { // if input b is zero
       if (add_reg) {
         val result = RegInit(0.U.asTypeOf(new ComplexNum(bw)))
         when(io.in_en){
@@ -69,7 +69,7 @@ object FPComplex { // these are the complex FP modules
       } else {
         io.out_s := io.in_a
       }
-    } else { // neither the real or imaginary parts can be ignored
+    } else { // none of the input a or input b magnitudes are zero
       val FP_adders = (for (i <- 0 until 2) yield {
         val fpadd = Module(new FP_adder_v2(bw)).io
         fpadd
@@ -113,7 +113,7 @@ object FPComplex { // these are the complex FP modules
       val in_b = Input(new ComplexNum(bw))
       val out_s = Output(new ComplexNum(bw))
     })
-    if (sRe.abs < 0.00005) { // check if the real part is appx 0
+    if (sRe.abs < 0.00005) { // check if magnitude of input a is zero
       if (add_reg) {
         val result = RegInit(0.U.asTypeOf(new ComplexNum(bw)))
         when(io.in_en) {
@@ -125,7 +125,7 @@ object FPComplex { // these are the complex FP modules
         io.out_s.Re := (~io.in_b.Re(bw - 1)) ## io.in_b.Re(bw - 2, 0)
         io.out_s.Im := (~io.in_b.Im(bw - 1)) ## io.in_b.Im(bw - 2, 0)
       }
-    } else if (sIm.abs < 0.00005) { // check if imaginary part is appx 0
+    } else if (sIm.abs < 0.00005) { // check if magnitude of input b is zero
       if (add_reg) {
         val result = RegInit(0.U.asTypeOf(new ComplexNum(bw)))
         when(io.in_en) {
@@ -135,7 +135,7 @@ object FPComplex { // these are the complex FP modules
       } else {
         io.out_s := io.in_a
       }
-    } else { // neither the real or imaginary parts are zero // we must use actual FP units
+    } else { // neither the input a or input b are zero // we must use actual FP units
       val FP_subbers = (for (i <- 0 until 2) yield {
         val fpsub = Module(new FP_subber_v2(bw)).io
         fpsub
