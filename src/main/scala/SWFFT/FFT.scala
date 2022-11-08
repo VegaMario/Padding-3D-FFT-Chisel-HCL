@@ -582,6 +582,155 @@ object FFT {
     total_latency
   }
 
+  def compute_latency(N: Int, r: Int, w: Int, inv: Boolean, tpe: Boolean): (Int, Int) = {
+    val DFTr_Constants = if (inv) {
+      FFT.inv_DFT_gen(r).map(_.toVector).toVector
+    } else {
+      FFT.DFT_gen(r).map(_.toVector).toVector
+    }
+    var mult_count = 0
+    for (i <- 0 until r - 1) {
+      for (j <- 0 until r - 1) {
+        val n = DFTr_Constants(i + 1)(j + 1)
+        val c1 = FFT.isReducable(n.re.abs)
+        val c2 = FFT.isReducable(n.im.abs)
+        if (!((c1._1 && n.im.abs < 0.005) || (c2._1 && n.re.abs < 0.005))) {
+          mult_count += 1
+        }
+      }
+    }
+    val inner_square_size = r - 1
+    var last_ind = r - 1
+    var start_ind = 1
+    val inner_inner_square_size = inner_square_size / 2
+    val ind_sq = for (i <- 0 until inner_inner_square_size) yield {
+      val row = for (j <- 0 until inner_inner_square_size) yield {
+        if (((i + 1) * (j + 1) % r) > r / 2) {
+          ((i + 1) * (j + 1) % r) - r
+        } else {
+          ((i + 1) * (j + 1) % r)
+        }
+      }
+      row
+    }
+    val ind_sq_unique = mutable.ArrayBuffer[Int]()
+    val ind_sq_unique_address = mutable.ArrayBuffer[(Int, Int)]()
+    val cases = mutable.ArrayBuffer[(Int, Int)]()
+    val cases_addr = mutable.ArrayBuffer[(Int, Int)]()
+    for (i <- 0 until inner_inner_square_size) {
+      for (j <- 0 until inner_inner_square_size) {
+        if (!ind_sq_unique.contains(ind_sq(i)(j).abs)) {
+          ind_sq_unique += ind_sq(i)(j)
+          val temp = (i, j)
+          ind_sq_unique_address += temp
+        }
+        if (!cases.contains((ind_sq(i)(j).abs, j))) {
+          val temp = (ind_sq(i)(j).abs, j)
+          cases += temp
+          val temp2 = (i, j)
+          cases_addr += temp2
+        }
+      }
+    }
+
+    def returnMapping2(num: Int, arr: Array[(Int, Int)]): (Int, Int) = { //for multiply access values
+      var returnval = (0, 0)
+      for (i <- 0 until arr.length) {
+        if (num == arr(i)._1) {
+          returnval = ind_sq_unique_address(i)
+        }
+      }
+      returnval
+    }
+
+    val cases_addr_adjusted = cases.map(x => returnMapping2(x._1.abs, ind_sq_unique.zipWithIndex.toArray))
+
+    def returnMapping3(num: (Int, Int), arr: Array[(Int, Int)]): Int = {
+      var returnval = 0
+      for (i <- 0 until arr.length) {
+        if (num == arr(i)) {
+          returnval = i
+        }
+      }
+      returnval
+    }
+
+    val new_adj_case_sq = ind_sq.map(x => x.zipWithIndex.map(y => (returnMapping3((y._1.abs, y._2), cases.toArray), y._1 < 0)))
+    var mult_layer_count1 = 0
+    var cases_no_mult = mutable.ArrayBuffer[(Int, Int)]()
+    for (i <- 0 until cases.length) yield {
+      if (!FFT.isReducable(DFTr_Constants(cases_addr_adjusted(i)._1 + 1)(cases_addr_adjusted(i)._2 + 1).re)._1 || !FFT.isReducable(DFTr_Constants(cases_addr_adjusted(i)._1 + 1)(cases_addr_adjusted(i)._2 + 1).im)._1) {
+        mult_layer_count1 += 1
+      } else {
+        cases_no_mult += cases_addr_adjusted(i)
+      }
+    }
+    var subadd_layer_count1 = 0
+    var cases_no_add = mutable.ArrayBuffer[(Int, Int)]()
+    for (i <- 0 until cases.length) yield {
+      if (!(DFTr_Constants(cases_addr_adjusted(i)._1 + 1)(cases_addr_adjusted(i)._2 + 1).re.abs < 0.00005) && !(DFTr_Constants(cases_addr_adjusted(i)._1 + 1)(cases_addr_adjusted(i)._2 + 1).im.abs < 0.00005)) {
+        subadd_layer_count1 += 1
+      } else {
+        cases_no_add += cases_addr_adjusted(i)
+      }
+    }
+    val CMultLatency = 2
+    val CAddLatency = 1
+    val initial_Latency = 1
+    val multlayerlatency = if (mult_layer_count1 > 0) {
+      1
+    } else {
+      0
+    }
+    val subaddlayerlatency = if (subadd_layer_count1 > 0) {
+      1
+    } else {
+      0
+    }
+    val multadd_latency = if (inner_inner_square_size > 1) {
+      ((Math.log10(inner_inner_square_size) / Math.log10(2)).floor.toInt + (for (l <- 0 until (Math.log10(inner_inner_square_size) / Math.log10(2)).floor.toInt) yield {
+        (inner_inner_square_size / Math.pow(2, l)).floor.toInt % 2
+      }).reduce(_ + _)) * (CAddLatency)
+    } else {
+      0
+    }
+    val end_latency = 1
+    var DFT_latency = initial_Latency + multlayerlatency + subaddlayerlatency + multadd_latency + end_latency
+    if (r == 2) {
+      DFT_latency = 1
+    }
+    val DFTs_per_stage = N / r
+    val number_of_stages = (Math.log10(N) / Math.log10(r)).round.toInt
+    val TotalStages = ((Math.log10(N) / Math.log10(r)).round - 1).toInt
+    var T_L = 0
+    if (!tpe) {
+      for (i <- 0 until TotalStages) {
+        val twid = if (inv) {
+          Permutations.T2_inv(N, r)(i)
+        } else {
+          Permutations.T2(N, r)(i)
+        }
+        var mult_count2 = 0
+        for (i <- 0 until w) {
+          val n = twid(i)
+          val c1 = FFT.isReducable(n.re.abs)
+          val c2 = FFT.isReducable(n.im.abs)
+          if (!((c1._1 && n.im.abs < 0.005) || (c2._1 && n.re.abs < 0.005))) {
+            mult_count2 += 1
+          }
+        }
+        var T_latency = CMultLatency
+        if (mult_count2 == 0) {
+          T_latency = 0
+        }
+        T_L += T_latency
+      }
+    } else {
+      T_L = CMultLatency
+    }
+    (DFT_latency, T_L)
+  }
+
   // not-related to FFT, but its used for multiplier/adder hardware reduction (dont know why I have it here)
   def isReducable(num:Double):(Boolean,Int) = {
     val pow = (Math.log10(num)/Math.log10(2)).round

@@ -16,12 +16,12 @@ import DFTDesigns._
 import scala.collection.mutable
 
 object TwidFactorDesigns {
-  class TwiddleFactorROM_forStreaming(N: Int, r: Int, w: Int, stage: Int, bw: Int) extends Module{
+  class TwiddleFactorROM_forStreaming(N: Int, r: Int, w: Int, stage: Int, bw: Int, inv: Boolean) extends Module{
     val io = IO(new Bundle() {
       val in_addr = Input(UInt(log2Ceil(N).W))
       val out_data = Output(Vec(w, new ComplexNum(bw)))
     })
-    val Twid_Constants = Permutations.T2(N,r)(stage)
+    val Twid_Constants = if(inv){Permutations.T2_inv(N, r)(stage)}else{Permutations.T2(N, r)(stage)}
     val Twid_map_2D = for(i <- 0 until N/w)yield{
       val tm = for(j <- 0 until w) yield{
         Twid_Constants(i*w+j)
@@ -42,12 +42,12 @@ object TwidFactorDesigns {
     }
   }
 
-  class TwiddleFactorROM_mr_forStreaming(N: Int, s: Int, r: Int, w: Int, bw: Int) extends Module{
+  class TwiddleFactorROM_mr_forStreaming(N: Int, s: Int, r: Int, w: Int, bw: Int, inv: Boolean) extends Module{
     val io = IO(new Bundle() {
       val in_addr = Input(UInt(log2Ceil(N).W))
       val out_data = Output(Vec(w, new ComplexNum(bw)))
     })
-    val Twid_Constants = Permutations.T2_rs(N,s,r)
+    val Twid_Constants = if(inv){Permutations.T2_rs_inv(N,s,r)}else{Permutations.T2_rs(N,s,r)}
     val Twid_map_2D = for(i <- 0 until N/w)yield{
       val tm = for(j <- 0 until w) yield{
         Twid_Constants(i*w+j)
@@ -68,16 +68,16 @@ object TwidFactorDesigns {
     }
   }
 
-  class TwiddleFactorsStreamed_v2(N: Int, r: Int, w: Int, stage: Int, bw: Int) extends Module {
+  class TwiddleFactorsStreamed_v2(N: Int, r: Int, w: Int, stage: Int, bw: Int, inv: Boolean) extends Module {
     val io = IO(new Bundle() {
       val in_en_main = Input(Bool())
       val in = Input(Vec(w, new ComplexNum(bw)))
       val in_en = Input(Vec(2, Bool()))
       val out = Output(Vec(w, new ComplexNum(bw)))
     })
-    val DFTr_Constants = Permutations.T2(N, r)(stage)
+    val DFTr_Constants = if(inv){Permutations.T2_inv(N, r)(stage)}else{Permutations.T2(N, r)(stage)}
     var mults = 0
-    val Twid_ROM = Module(new TwiddleFactorROM_forStreaming(N, r, w, stage, bw)).io
+    val Twid_ROM = Module(new TwiddleFactorROM_forStreaming(N, r, w, stage, bw, inv)).io // initialize ROM with twiddle factors
     for (i <- 0 until N) {
       if (DFTr_Constants(i).re.abs > 0.00000001 && DFTr_Constants(i).im.abs > 0.00000001) {
         mults += 1
@@ -107,7 +107,7 @@ object TwidFactorDesigns {
           }.otherwise {
             cnt := cnt + 1.U
           }
-          for (i <- 0 until w) {
+          for (i <- 0 until w) { // multiply module inputs with the twiddle factor outputs
             multipliers(i).in_a := io.in(i)
             multipliers(i).in_b := Twid_ROM.out_data(i)
           }
@@ -118,7 +118,7 @@ object TwidFactorDesigns {
           }
 //          cnt := 0.U
         }
-      }.otherwise{
+      }.otherwise{ // don't incremenet the counters
         when(io.in_en.asUInt.orR){
           for (i <- 0 until w) {
             multipliers(i).in_a := io.in(i)
@@ -135,7 +135,7 @@ object TwidFactorDesigns {
         io.out(i) := multipliers(i).out_s
       }
       Twid_ROM.in_addr := cnt
-    } else {
+    } else { // no multipliers are required
       val is_enabled = RegInit(false.B)
       val cnt = RegInit(0.U(log2Ceil(N / w).W))
       when(io.in_en_main) {
@@ -169,9 +169,9 @@ object TwidFactorDesigns {
               }.otherwise {
                 multipliers(i).is_neg := false.B
               }
-            }.otherwise {
-              multipliers(i).is_flip := true.B
-              when(Twid_ROM.out_data(i).Im(bw - 1) === 1.U) {
+            }.otherwise { // might imply that imaginary part = 1 while real part = 0
+              multipliers(i).is_flip := true.B // therefore real and im parts switch
+              when(Twid_ROM.out_data(i).Im(bw - 1) === 1.U) { // is negative?
                 multipliers(i).is_neg := true.B
               }.otherwise {
                 multipliers(i).is_neg := false.B
@@ -187,7 +187,7 @@ object TwidFactorDesigns {
             multipliers(i).is_neg := false.B
           }
         }
-      }.otherwise{
+      }.otherwise{ // otherwise counters are disabled
         when(io.in_en.asUInt.orR){
           for (i <- 0 until w) {
             multipliers(i).in := io.in(i)
@@ -234,16 +234,16 @@ object TwidFactorDesigns {
     }
   }
 
-  class TwiddleFactorsStreamed_mr_v2(N: Int, s: Int, r: Int, w: Int, bw: Int, delay: Int) extends Module {
+  class TwiddleFactorsStreamed_mr_v2(N: Int, s: Int, r: Int, w: Int, bw: Int, delay: Int, inv: Boolean) extends Module {
     val io = IO(new Bundle() {
       val in = Input(Vec(w, new ComplexNum(bw)))
       val in_en_main = Input(Bool())
       val in_en = Input(Vec(2, Bool()))
       val out = Output(Vec(w, new ComplexNum(bw)))
     })
-    val DFTr_Constants = Permutations.T2_rs(N, s, r)
+    val DFTr_Constants = if(inv){Permutations.T2_rs_inv(N, s, r)}else{Permutations.T2_rs(N, s, r)}
     var mults = 0
-    val Twid_ROM = Module(new TwiddleFactorROM_mr_forStreaming(N, s, r, w, bw)).io
+    val Twid_ROM = Module(new TwiddleFactorROM_mr_forStreaming(N, s, r, w, bw, inv)).io
     for (i <- 0 until N) {
       if (DFTr_Constants(i).re.abs > 0.00000001 && DFTr_Constants(i).im.abs > 0.00000001) {
         mults += 1
@@ -269,7 +269,7 @@ object TwidFactorDesigns {
       }
       when(io.in_en_main) {
         when(io.in_en.asUInt.orR) {
-          when(cnt2 === (delay - 1).U) {
+          when(cnt2 === (delay - 1).U) { // dont reset values until cnt2 has cycled delay times
             cnt2 := 0.U
             cnt := 0.U
           }.elsewhen(cnt === ((N / w) - 1).U && cnt2 =/= (delay - 1).U) {
@@ -279,7 +279,7 @@ object TwidFactorDesigns {
             cnt := cnt + 1.U
             cnt2 := cnt2 + 1.U
           }
-          for (i <- 0 until w) {
+          for (i <- 0 until w) { // multiply inputs with twiddle factors
             multipliers(i).in_a := io.in(i)
             multipliers(i).in_b := Twid_ROM.out_data(i)
           }
@@ -308,7 +308,7 @@ object TwidFactorDesigns {
         io.out(i) := multipliers(i).out_s
       }
       Twid_ROM.in_addr := cnt
-    } else {
+    } else { // otherwise no real multipliers are used
       val is_enabled = RegInit(false.B)
       val cnt = RegInit(0.U(log2Ceil(N / w).W))
       val cnt2 = RegInit(0.U(log2Ceil(delay).W))
@@ -414,29 +414,27 @@ object TwidFactorDesigns {
     }
   }
 
-  class TwiddleFactors_v2(N: Int, r: Int, w: Int, stage: Int, bw: Int) extends Module {
+  class TwiddleFactors_v2(N: Int, r: Int, w: Int, stage: Int, bw: Int, inv: Boolean) extends Module {
     val io = IO(new Bundle() {
       val in_en = Input(Bool())
       val in = Input(Vec(w, new ComplexNum(bw)))
       val out = Output(Vec(w, new ComplexNum(bw)))
     })
     val TotalStages = ((Math.log10(N) / Math.log10(r)).round - 1).toInt
-    val locations = mutable.ArrayBuffer[(Int, Int)]()
-    for (i <- 0 until TotalStages - 1) {
-      for (j <- 0 until N) {
-        if (Permutations.T2(N, r)(i)(j).re == Permutations.T2(N, r)(i)(j).im) {
-          val possibility = j
-          for (k <- i + 1 until TotalStages) {
-            if (Permutations.T2(N, r)(k)(j).re == Permutations.T2(N, r)(k)(j).im) {
-            }
-          }
-        }
-      }
-    }
-    val DFTr_Constants = Permutations.T2(N, r)(stage)
+//    for (i <- 0 until TotalStages - 1) {
+//      for (j <- 0 until N) {
+//        if (Permutations.T2(N, r)(i)(j).re == Permutations.T2(N, r)(i)(j).im) {
+//          for (k <- i + 1 until TotalStages) {
+//            if (Permutations.T2(N, r)(k)(j).re == Permutations.T2(N, r)(k)(j).im) {
+//            }
+//          }
+//        }
+//      }
+//    }
+    val DFTr_Constants = if(inv){Permutations.T2_inv(N, r)(stage)}else{Permutations.T2(N, r)(stage)}
     var mults = 0
     for (i <- 0 until N) {
-      if (DFTr_Constants(i).re.abs > 0.00000001 && DFTr_Constants(i).im.abs > 0.00000001) {
+      if (DFTr_Constants(i).re.abs > 0.00000001 && DFTr_Constants(i).im.abs > 0.00000001) { // if both real part and imaginary parts are non-zero
         mults += 1
       }
     }
@@ -446,6 +444,7 @@ object TwidFactorDesigns {
       false
     } // it seems not too hard to optimize, but I'll come back to this since it is simpler than mixed-radix streaming
     val multipliers = for (i <- 0 until N) yield {
+      // if the multiplier count can be reduced further, the FPComplexMult_reducable module should be able to identify this
       val instance = Module(new FPComplexMult_reducable_forSymmetric_v2(bw, DFTr_Constants(i).re, DFTr_Constants(i).im, addregs, false)).io
       instance
     }

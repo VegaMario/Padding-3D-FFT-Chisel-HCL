@@ -17,20 +17,20 @@ import scala.collection.mutable
 object DFTDesigns {
   // the v2 versions have an enable input
 
-  class DFT_Symmetric_NRV_v2(r: Int, bw: Int) extends Module {
+  class DFT_Symmetric_NRV_v2(r: Int, bw: Int, inv: Boolean) extends Module {
     val io = IO(new Bundle() {
       val in_en = Input(Bool())
       val in = Input(Vec(r, new ComplexNum(bw)))
       val out = Output(Vec(r, new ComplexNum(bw)))
     })
-    val DFTr_Constants = FFT.DFT_gen(r).map(_.toVector).toVector
+    val DFTr_Constants = if(inv){FFT.inv_DFT_gen(r).map(_.toVector).toVector}else{FFT.DFT_gen(r).map(_.toVector).toVector}
     val is_odd = if (r % 2 == 0) {
       false
     } else {
       true
     }
     if (r == 2) {
-      val dft2 = Module(new DFT_NRV_V2(2, bw)).io
+      val dft2 = Module(new DFT_NRV_V2(2, bw, inv)).io
       dft2.in_en := io.in_en
       dft2.in := io.in
       io.out := dft2.out
@@ -612,13 +612,13 @@ object DFTDesigns {
     }
   }
 
-  class DFT_NRV_V2(r: Int, bw: Int) extends Module {
+  class DFT_NRV_V2(r: Int, bw: Int, inv: Boolean) extends Module {
     val io = IO(new Bundle() {
       val in = Input(Vec(r, new ComplexNum(bw)))
       val in_en = Input(Bool())
       val out = Output(Vec(r, new ComplexNum(bw)))
     })
-    val DFTr_Constants = FFT.DFT_gen(r).map(_.toVector).toVector
+    val DFTr_Constants = if(inv){FFT.inv_DFT_gen(r).map(_.toVector).toVector}else{FFT.DFT_gen(r).map(_.toVector).toVector}
     var mult_count = 0
     val mult_ind = mutable.ArrayBuffer[Int]()
     val mult_needs = for (i <- 0 until r - 1) yield {
@@ -626,13 +626,13 @@ object DFTDesigns {
         val n = DFTr_Constants(i + 1)(j + 1)
         val c1 = FFT.isReducable(n.re.abs)
         val c2 = FFT.isReducable(n.im.abs)
-        if (!((c1._1 && n.im.abs < 0.005) || (c2._1 && n.re.abs < 0.005))) {
+        if (!((c1._1 && n.im.abs < 0.00005) || (c2._1 && n.re.abs < 0.00005))) {
           mult_count += 1
           mult_ind += (i * (r - 1) + j)
           (i, j, 0, false, false, true)
         } else {
           mult_ind += (i * (r - 1) + j)
-          if ((c1._1 && n.im.abs < 0.005)) {
+          if ((c1._1 && n.im.abs < 0.00005)) {
             (i, j, c1._2.abs, n.re < -0.0005, false, false)
           } else {
             (i, j, c2._2.abs, n.im < -0.0005, true, false)
