@@ -31,7 +31,7 @@ object PaddingDesigns {
     })
     val entries_per_ram = entries / streamingwidth
     val sram_mems_2 = RegInit(VecInit.fill(2)(VecInit.fill(entries_per_ram)(0.U.asTypeOf(new ComplexNum(bw)))))
-    val save_out = RegInit(VecInit.fill(streamingwidth)(0.U.asTypeOf(new ComplexNum(bw))))
+    val reg_out = RegInit(VecInit.fill(streamingwidth)(0.U.asTypeOf(new ComplexNum(bw))))
     when(io.in_rst) { // clear the memory if reset (might move to within the enable statement)
       for (i <- 0 until entries / streamingwidth) {
         for (j <- 0 until streamingwidth) {
@@ -39,7 +39,7 @@ object PaddingDesigns {
         }
       }
       io.out_data := VecInit.fill(streamingwidth)(0.U.asTypeOf(new ComplexNum(bw)))
-      save_out := VecInit.fill(2)(0.U.asTypeOf(new ComplexNum(bw)))
+      reg_out := VecInit.fill(2)(0.U.asTypeOf(new ComplexNum(bw)))
     }.elsewhen(io.in_en) {
       when(io.in_write_en) {
         for (i <- 0 until streamingwidth) {
@@ -50,15 +50,15 @@ object PaddingDesigns {
             sram_mems_2(i)(io.in_addr + 1.U) := io.in_data(i.U + io.in_offset)
           }
         }
-        io.out_data := save_out
+        io.out_data := reg_out
       }.otherwise {
         for (i <- 0 until streamingwidth) {
-          io.out_data(i) := save_out(i)
-          save_out(i) := sram_mems_2(i)(io.in_addr)
+          io.out_data(i) := reg_out(i)
+          reg_out(i) := sram_mems_2(i)(io.in_addr)
         }
       }
     }.otherwise {
-      io.out_data := save_out
+      io.out_data := reg_out
     }
   }
 
