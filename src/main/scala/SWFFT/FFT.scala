@@ -731,6 +731,109 @@ object FFT {
     (DFT_latency, T_L)
   }
 
+  def compute_num_FPunits_MR(N: Int, nr: Int, ns: Int, w1: Int): Int = {
+    val w2 = getw2(w1, N, nr, ns, 3)
+    println(s"w1: ${w1}, w2: ${w2}")
+    val stages_cnt_nr = (Math.log10(nr) / Math.log10(2)).round.toInt
+    val stages_cnt_ns = (Math.log10(ns) / Math.log10(3)).round.toInt
+    val num_dft2_pmodules = w1 / 2
+    val num_dft3_ppmodules = w2 / 3
+    val num_dft2_fpas = 4 * stages_cnt_nr * num_dft2_pmodules
+    val num_dft2_fpms = 0
+    val num_dft3_fpas = 14 * stages_cnt_ns * num_dft3_ppmodules
+    val num_dft3_fpms = 2 * stages_cnt_ns * num_dft3_ppmodules
+    val num_TSR2_fpas = if (w1 != 32) {
+      2 * (stages_cnt_nr - 1) * w1
+    } else {
+      68
+    }
+    val num_TSR2_fpms = if (w1 != 32) {
+      4 * (stages_cnt_nr - 1) * w1
+    } else {
+      108
+    }
+    val num_TMR3_fpas = 2 * w2
+    val num_TMR3_fpms = 4 * w2
+    // total fpas
+    val fpas = num_dft2_fpas + num_dft3_fpas + num_TSR2_fpas + num_TMR3_fpas
+    println(s"fpas: ${fpas}")
+    // total fpms
+    val fpms = num_dft2_fpms + num_dft3_fpms + num_TSR2_fpms + num_TMR3_fpms
+    println(s"fpms: ${fpms}")
+    // total fps per cycle
+    val fptotal = fpas + fpms
+    println(s"fptotal: ${fptotal}")
+    val lat_compare = FFT.getfftstreamingmrlatency(N, nr, ns, 2, 3, w1, 32, false)
+    println(s"latency: ${lat_compare}")
+    fptotal
+  }
+
+
+  def compute_num_FPunits_MR_opt(N: Int, nr: Int, ns: Int, w1: Int): Int = {
+    val w2 = getw2(w1, N, nr, ns, 3)
+    println(s"w1: ${w1}, w2: ${w2}")
+    val sr_T = Permutations.T2(nr, 2)
+    val mr_T = Permutations.T2_rs(N, nr, ns)
+    var sr_mult_count = 0
+    var mr_mult_count = 0
+    val stages_cnt_nr = (Math.log10(nr) / Math.log10(2)).round.toInt
+    val stages_cnt_ns = (Math.log10(ns) / Math.log10(3)).round.toInt
+    for (j <- 0 until stages_cnt_nr - 1) {
+      for (i <- 0 until w1) {
+        var flag = false
+        for (l <- 0 until nr / w1) {
+          if (!(((sr_T(j)(i + l * w1).re.abs - 1.0).abs < 1E-3) && (sr_T(j)(i + l * w1).im.abs < 1E-3)) && !(((sr_T(j)(i + l * w1).im.abs - 1.0).abs < 1E-3) && (sr_T(j)(i + l * w1).re.abs < 1E-3))) {
+            flag = true
+          }
+        }
+        if (flag)
+          sr_mult_count += 1
+      }
+    }
+    for (i <- 0 until w2) {
+      var flag = false
+      for (j <- 0 until N / w2) {
+        if (!(((mr_T(i + j * w2).re.abs - 1.0).abs < 1E-3) && (mr_T(i + j * w2).im.abs < 1E-3)) && !(((mr_T(i + j * w2).im.abs - 1.0).abs < 1E-3) && (mr_T(i + j * w2).re.abs < 1E-3))) {
+          flag = true
+        }
+      }
+      if (flag)
+        mr_mult_count += 1
+    }
+    println(s"sr_mults: ${sr_mult_count}")
+    println(s"mr_mults: ${mr_mult_count}")
+    val num_dft2_pmodules = w1 / 2
+    val num_dft3_ppmodules = w2 / 3
+    val num_dft2_fpas = 4 * stages_cnt_nr * num_dft2_pmodules
+    val num_dft2_fpms = 0
+    val num_dft3_fpas = 14 * stages_cnt_ns * num_dft3_ppmodules
+    val num_dft3_fpms = 2 * stages_cnt_ns * num_dft3_ppmodules
+    val num_TSR2_fpas = if (w1 != 32) {
+      sr_mult_count * 2
+    } else {
+      68
+    }
+    val num_TSR2_fpms = if (w1 != 32) {
+      sr_mult_count * 4
+    } else {
+      108
+    }
+    val num_TMR3_fpas = mr_mult_count * 2
+    val num_TMR3_fpms = mr_mult_count * 4
+    // total fpas
+    val fpas = num_dft2_fpas + num_dft3_fpas + num_TSR2_fpas + num_TMR3_fpas
+    println(s"fpas: ${fpas}")
+    // total fpms
+    val fpms = num_dft2_fpms + num_dft3_fpms + num_TSR2_fpms + num_TMR3_fpms
+    println(s"fpms: ${fpms}")
+    // total fps per cycle
+    val fptotal = fpas + fpms
+    println(s"fptotal: ${fptotal}")
+    val lat_compare = FFT.getfftstreamingmrlatency(N, nr, ns, 2, 3, w1, 32, false)
+    println(s"latency: ${lat_compare}")
+    fptotal
+  }
+
   // not-related to FFT, but its used for multiplier/adder hardware reduction (dont know why I have it here)
   def isReducable(num:Double):(Boolean,Int) = {
     val pow = (Math.log10(num)/Math.log10(2)).round
