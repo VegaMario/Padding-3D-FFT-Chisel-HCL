@@ -732,7 +732,7 @@ object FFT {
   }
 
   def compute_num_FPunits_MR(N: Int, nr: Int, ns: Int, w1: Int): Int = {
-    val w2 = getw2(w1, N, nr, ns, 3)
+    val w2 = if (w1 != 96) {getw2(w1, N, nr, ns, 3)} else {96}
     println(s"w1: ${w1}, w2: ${w2}")
     val stages_cnt_nr = (Math.log10(nr) / Math.log10(2)).round.toInt
     val stages_cnt_ns = (Math.log10(ns) / Math.log10(3)).round.toInt
@@ -742,18 +742,18 @@ object FFT {
     val num_dft2_fpms = 0
     val num_dft3_fpas = 14 * stages_cnt_ns * num_dft3_ppmodules
     val num_dft3_fpms = 2 * stages_cnt_ns * num_dft3_ppmodules
-    val num_TSR2_fpas = if (w1 != 32) {
-      2 * (stages_cnt_nr - 1) * w1
-    } else {
-      68
+    val num_TSR2_fpas = if (w1 != 32 && w1 != 96) {
+      2 * (stages_cnt_nr - 2) * w1
+    } else{
+      68 * w1/32
     }
-    val num_TSR2_fpms = if (w1 != 32) {
-      4 * (stages_cnt_nr - 1) * w1
+    val num_TSR2_fpms = if (w1 != 32 && w1 != 96) {
+      4 * (stages_cnt_nr - 2) * w1
     } else {
-      108
+      108 * w1/32
     }
-    val num_TMR3_fpas = 2 * w2
-    val num_TMR3_fpms = 4 * w2
+    val num_TMR3_fpas = if (w1 != 96) {2 * w2}else{118}
+    val num_TMR3_fpms = if (w1 != 96) {4 * w2}else{214}
     // total fpas
     val fpas = num_dft2_fpas + num_dft3_fpas + num_TSR2_fpas + num_TMR3_fpas
     println(s"fpas: ${fpas}")
@@ -763,14 +763,14 @@ object FFT {
     // total fps per cycle
     val fptotal = fpas + fpms
     println(s"fptotal: ${fptotal}")
-    val lat_compare = FFT.getfftstreamingmrlatency(N, nr, ns, 2, 3, w1, 32, false)
+    val lat_compare = if (w1 != 96) {FFT.getfftstreamingmrlatency(N, nr, ns, 2, 3, w1, 32, false)} else {FFT.getFFTLatencymr(N,nr,ns,2,3,w1,32,false)}
     println(s"latency: ${lat_compare}")
     fptotal
   }
 
 
   def compute_num_FPunits_MR_opt(N: Int, nr: Int, ns: Int, w1: Int): Int = {
-    val w2 = getw2(w1, N, nr, ns, 3)
+    val w2 = if (w1 != 96) {getw2(w1, N, nr, ns, 3)} else {96}
     println(s"w1: ${w1}, w2: ${w2}")
     val sr_T = Permutations.T2(nr, 2)
     val mr_T = Permutations.T2_rs(N, nr, ns)
@@ -808,18 +808,18 @@ object FFT {
     val num_dft2_fpms = 0
     val num_dft3_fpas = 14 * stages_cnt_ns * num_dft3_ppmodules
     val num_dft3_fpms = 2 * stages_cnt_ns * num_dft3_ppmodules
-    val num_TSR2_fpas = if (w1 != 32) {
+    val num_TSR2_fpas = if (w1 != 32 && w1 != 96) {
       sr_mult_count * 2
     } else {
-      68
+      68 * w1/32
     }
-    val num_TSR2_fpms = if (w1 != 32) {
+    val num_TSR2_fpms = if (w1 != 32 && w1 != 96) {
       sr_mult_count * 4
     } else {
-      108
+      108 * w1/32
     }
-    val num_TMR3_fpas = mr_mult_count * 2
-    val num_TMR3_fpms = mr_mult_count * 4
+    val num_TMR3_fpas = if(w1 != 96) {mr_mult_count * 2} else {118}
+    val num_TMR3_fpms = if(w1 != 96) {mr_mult_count * 4} else {214}
     // total fpas
     val fpas = num_dft2_fpas + num_dft3_fpas + num_TSR2_fpas + num_TMR3_fpas
     println(s"fpas: ${fpas}")
@@ -829,7 +829,7 @@ object FFT {
     // total fps per cycle
     val fptotal = fpas + fpms
     println(s"fptotal: ${fptotal}")
-    val lat_compare = FFT.getfftstreamingmrlatency(N, nr, ns, 2, 3, w1, 32, false)
+    val lat_compare = if (w1 != 96) {FFT.getfftstreamingmrlatency(N, nr, ns, 2, 3, w1, 32, false)} else {FFT.getFFTLatencymr(N,nr,ns,2,3,w1,32,false)}
     println(s"latency: ${lat_compare}")
     fptotal
   }
